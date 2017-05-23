@@ -9,7 +9,7 @@ A hobby project.
 - [ ] Take a path as an argument (this will be a path to a folder of files to upload)
 - [ ] Make requests for frob, token, depending on what values are available
 - [ ] Upload a single photo
-- [ ] Investigate parallel [[uploads]]
+- [ ] Investigate parallel uploads
 - [ ] Show feedback for photo uploading
   - [ ] Name / progress of current file
   - [ ] Files uploaded / remaining
