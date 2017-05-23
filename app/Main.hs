@@ -2,11 +2,15 @@
 
 module Main where
 
+import Data.List ( intersperse )
 import Data.Semigroup ((<>))
 
-import Data.ByteString ( ByteString
-                       , unpack
-                       )
+import Data.ByteString.Lazy ( ByteString
+                            , concat
+                            , unpack
+                             )
+
+import qualified Data.ByteString.Lazy as BS
 
 import Data.Text.Encoding (decodeUtf8)
 
@@ -15,53 +19,80 @@ import Data.Map.Strict ( Map
                        , foldrWithKey
                        )
 
-import Data.Digest.Pure.MD5 ( md5 )
+import Data.Digest.Pure.MD5 ( md5
+                            , MD5Digest
+                            )
 
--- Signing
-----------
--- - is required for all calls using an auth token.
--- - is required for all calls to `flickr.auth.*`
---
--- Sort your argument list into alphabetical order based on the parameter name.
--- e.g. foo=1, bar=2, baz=3 sorts to bar=2, baz=3, foo=1
--- concatenate the shared secret and argument name-value pairs
--- e.g. SECRETbar2baz3foo1
--- calculate the md5() hash of this string
--- append this value to the argument list with the name api_sig, in hexidecimal string form
--- e.g. api_sig=1f3870be274f6c49b3e31a0c6728957f
-
-type ApiSig = String
-type Frob   = String
-
+type Frob   = ByteString
 type ApiKey = ByteString
 type Secret = ByteString
-
 type ArgMap = Map ByteString ByteString
 
-y :: ByteString
-y = "SECRET"
+--------------------------------------------------------------------------------
 
-x :: ArgMap
-x = fromList [ ("foo", "1")
-             , ("bar", "2")
-             , ("baz", "3")
-             ]
+-- Example secret and signature string for testing purposes
+-- https://www.flickr.com/services/api/auth.howto.desktop.html
 
-genSig :: Secret -> ArgMap -> ByteString
-genSig secret args = md5 $ secret <> foldrWithKey go "" args where
+testSecret :: ByteString
+testSecret = "000005fab4534d05"
+
+testArgs :: ArgMap
+testArgs = fromList [ ("method", "flickr.auth.getFrob")
+                    , ("api_key", "9a0554259914a86fb9e7eb014e4e5d52")
+                    ]
+
+generatesValidSignature :: Bool
+generatesValidSignature = genSig testSecret testArgs == "8ad70cd3888ce493c8dde4931f7d6bd0"
+
+--------------------------------------------------------------------------------
+
+-- Generate a flickr signature string from a shared secret and an argument map
+genSig :: Secret -> ArgMap -> String
+genSig secret args = (show . md5) $ secret <> foldrWithKey go "" args where
   go key val acc = key <> val <> acc
 
+-- Add a signature to a collection of args
+sign :: Secret -> ArgMap -> String
+sign secret args = toQueryString args <> "&api_sig=" <> genSig secret args
 
-frobMap :: ApiKey -> ArgMap
-frobMap key = fromList [ ("method", "flickr.auth.getFrob")
-                       , ("api_key", key)
-                       ]
+-- Generate a queryString from a map
+toQueryString :: ArgMap -> String
+toQueryString args = show $ BS.concat pairs where
+  pairs          = intersperse "&" $ foldrWithKey go [] args
+  go key val acc = key <> "=" <> val : acc
 
---frobUrl :: ApiKey -> ApiSig -> String
---frobUrl key sig = "http://flickr.com/services/rest/?"api_sig=" <> sig
+--------------------------------------------------------------------------------
 
---signInUrl :: ApiKey -> ApiSig -> Frob -> String
---signInUrl key sig frob = "http://flickr.com/services/auth/?api_key=" <> key <> "&perms=write&frob=" <> frob <> "&api_sig=" <> sig
+restEndpoint :: String
+restEndpoint = "http://flickr.com/services/rest/?"
+
+authEndpoint :: String
+authEndpoint = "http://flickr.com/services/auth/?"
+
+-- A url to use for requesting a "frob"
+-- A frob is needed to construct a URL for a flickr permissions dialog
+frobUrl :: Secret -> ApiKey -> String
+frobUrl secret apikey = restEndpoint <> sign secret args where
+  args = fromList [ ("method", "flickr.auth.getFrob")
+                  , ("api_key", apikey)
+                  ]
+
+-- A url for a flickr permissions dialog
+signInUrl :: Secret -> ApiKey -> Frob -> String
+signInUrl secret apikey frob = authEndpoint <> sign secret args where
+  args = fromList [ ("perms", "write")
+                  , ("frob", frob)
+                  , ("api_key", apikey)
+                  ]
+
+-- http://flickr.com/services/rest/?method=flickr.auth.getToken&api_key=987654321&frob=1a2b3c4d5e&api_sig=7f3870be274f6c49b3e31a0c6728957f
+-- A url for an auth token
+authTokenUrl :: Secret -> ApiKey -> Frob -> String
+authTokenUrl secret apikey frob = restEndpoint <> sign secret args where
+  args = fromList [ ("method", "flickr.auth.getToken")
+                  , ("frob", frob)
+                  , ("api_key", apikey)
+                  ]
 
 main :: IO ()
 main = do
