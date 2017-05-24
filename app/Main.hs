@@ -2,17 +2,12 @@
 
 module Main where
 
-import Data.List ( intersperse )
+import Data.List as DL
 import Data.Semigroup ((<>))
 
-import Data.ByteString.Lazy ( ByteString
-                            , concat
-                            , unpack
-                             )
+import Data.ByteString.Lazy ( ByteString )
 
-import qualified Data.ByteString.Lazy as BS
-
-import Data.Text.Encoding (decodeUtf8)
+import qualified Data.ByteString.Lazy.Char8 as BSC
 
 import Data.Map.Strict ( Map
                        , fromList
@@ -27,17 +22,37 @@ import Network.HTTP ( simpleHTTP
                     , getRequest
                     )
 
-type Frob   = ByteString
-type ApiKey = ByteString
-type Secret = ByteString
-type ArgMap = Map ByteString ByteString
+import Data.Aeson.Types ( typeMismatch
+                        )
+
+import Data.Yaml ( FromJSON(parseJSON)
+                 , ParseException()
+                 , Value(Array, Object)
+                 , decodeFileEither
+                 , decode
+                 , (.:)
+                 )
+
+--------------------------------------------------------------------------------
+
+data Config = Config { apiKey :: ApiKey, secret :: Secret } deriving (Show)
+
+instance FromJSON Config where
+  parseJSON (Object a) = Config <$> a .: "key"
+                                <*> a .: "secret"
+  parseJSON invalid    = typeMismatch "Config" invalid
+
+type Frob   = String
+type ApiKey = String
+type Secret = String
+type ArgMap = Map String String
 
 --------------------------------------------------------------------------------
 
 -- Example secret and signature string for testing purposes
 -- https://www.flickr.com/services/api/auth.howto.desktop.html
 
-testSecret :: ByteString
+testSecret :: String
 testSecret = "000005fab4534d05"
 
 testArgs :: ArgMap
@@ -52,7 +67,7 @@ generatesValidSignature = genSig testSecret testArgs == "8ad70cd3888ce493c8dde49
 
 -- Generate a flickr signature string from a shared secret and an argument map
 genSig :: Secret -> ArgMap -> String
-genSig secret args = (show . md5) $ secret <> foldrWithKey go "" args where
+genSig secret args = (show . md5 . BSC.pack) $ secret <> foldrWithKey go "" args where
   go key val acc = key <> val <> acc
 
 -- Add a signature to a collection of args
@@ -61,8 +76,8 @@ sign secret args = toQueryString args <> "&api_sig=" <> genSig secret args
 
 -- Generate a queryString from a map
 toQueryString :: ArgMap -> String
-toQueryString args = show $ BS.concat pairs where
-  pairs          = intersperse "&" $ foldrWithKey go [] args
+toQueryString args = DL.concat pairs where
+  pairs          = DL.intersperse "&" $ foldrWithKey go [] args
   go key val acc = key <> "=" <> val : acc
 
 --------------------------------------------------------------------------------
@@ -139,6 +154,14 @@ authTokenUrl secret apikey frob = restEndpoint <> sign secret args where
                   , ("frob", frob)
                   , ("api_key", apikey)
                   ]
+
+--------------------------------------------------------------------------------
+
+readConfig :: IO (Either ParseException Config)
+readConfig = decodeFileEither "config.yaml"
+
+--------------------------------------------------------------------------------
+
 
 main :: IO ()
 main = do
