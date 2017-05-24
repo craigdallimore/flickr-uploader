@@ -23,6 +23,10 @@ import Data.Digest.Pure.MD5 ( md5
                             , MD5Digest
                             )
 
+import Network.HTTP ( simpleHTTP
+                    , getRequest
+                    )
+
 type Frob   = ByteString
 type ApiKey = ByteString
 type Secret = ByteString
