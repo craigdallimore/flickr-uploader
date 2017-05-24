@@ -142,5 +142,5 @@ authTokenUrl secret apikey frob = restEndpoint <> sign secret args where
 
 main :: IO ()
 main = do
-  putStrLn "hello world"
+  putStrLn "This product uses the Flickr API but is not endorsed or certified by Flickr."
   putStrLn "Well..."
