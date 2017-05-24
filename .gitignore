@@ -19,3 +19,4 @@ cabal.sandbox.config
 *.hp
 .stack-work/
 *.pem
+config.yaml
