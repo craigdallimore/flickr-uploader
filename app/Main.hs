@@ -63,6 +63,48 @@ toQueryString args = show $ BS.concat pairs where
 
 --------------------------------------------------------------------------------
 
+{-
+
+  Notes related to uploading
+  https://www.flickr.com/services/api/upload.api.html
+
+  Endpoint
+  --------
+  https://up.flickr.com/services/upload/
+
+  Arguments
+  ---------
+  Note that the 'photo' parameter should not be included in the signature.
+  All other POST parameters should be included when generating the signature.
+
+  photo
+  The file to upload.
+
+  title (optional)
+  The title of the photo.
+
+  description (optional)
+  A description of the photo. May contain some limited HTML.
+
+  tags (optional)
+  A space-seperated list of tags to apply to the photo.
+
+  is_public, is_friend, is_family (optional)
+  Set to 0 for no, 1 for yes. Specifies who can view the photo.
+
+  safety_level (optional)
+  Set to 1 for Safe, 2 for Moderate, or 3 for Restricted.
+
+  content_type (optional)
+  Set to 1 for Photo, 2 for Screenshot, or 3 for Other.
+
+  hidden (optional)
+  Set to 1 to keep the photo in global search results, 2 to hide from public searches.
+
+-}
+
+--------------------------------------------------------------------------------
+
 restEndpoint :: String
 restEndpoint = "http://flickr.com/services/rest/?"
 
