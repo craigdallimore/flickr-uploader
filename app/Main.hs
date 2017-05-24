@@ -18,9 +18,16 @@ import Data.Digest.Pure.MD5 ( md5
                             , MD5Digest
                             )
 
+-- Outatime! consider https://haskell-lang.org/library/http-client
 import Network.HTTP ( simpleHTTP
+                    , HStream
+                    , Response
                     , getRequest
+                    , rspBody
                     )
+
+import Network.Stream ( ConnError
+                      )
 
 import Data.Aeson.Types ( typeMismatch
                         )
@@ -125,34 +132,34 @@ toQueryString args = DL.concat pairs where
 --------------------------------------------------------------------------------
 
 restEndpoint :: String
-restEndpoint = "http://flickr.com/services/rest/?"
+restEndpoint = "https://api.flickr.com/services/rest/?"
 
 authEndpoint :: String
-authEndpoint = "http://flickr.com/services/auth/?"
+authEndpoint = "https://api.flickr.com/services/auth/?"
 
 -- A url to use for requesting a "frob"
 -- A frob is needed to construct a URL for a flickr permissions dialog
-frobUrl :: Secret -> ApiKey -> String
-frobUrl secret apikey = restEndpoint <> sign secret args where
+frobUrl :: Config -> String
+frobUrl config = restEndpoint <> sign (secret config) args where
   args = fromList [ ("method", "flickr.auth.getFrob")
-                  , ("api_key", apikey)
+                  , ("api_key", apiKey config)
                   ]
 
 -- A url for a flickr permissions dialog
-signInUrl :: Secret -> ApiKey -> Frob -> String
-signInUrl secret apikey frob = authEndpoint <> sign secret args where
+signInUrl :: Config -> Frob -> String
+signInUrl config frob = authEndpoint <> sign (secret config) args where
   args = fromList [ ("perms", "write")
                   , ("frob", frob)
-                  , ("api_key", apikey)
+                  , ("api_key", apiKey config)
                   ]
 
 -- http://flickr.com/services/rest/?method=flickr.auth.getToken&api_key=987654321&frob=1a2b3c4d5e&api_sig=7f3870be274f6c49b3e31a0c6728957f
 -- A url for an auth token
-authTokenUrl :: Secret -> ApiKey -> Frob -> String
-authTokenUrl secret apikey frob = restEndpoint <> sign secret args where
+authTokenUrl :: Config -> Frob -> String
+authTokenUrl config frob = restEndpoint <> sign (secret config) args where
   args = fromList [ ("method", "flickr.auth.getToken")
                   , ("frob", frob)
-                  , ("api_key", apikey)
+                  , ("api_key", apiKey config)
                   ]
 
 --------------------------------------------------------------------------------
@@ -162,8 +169,28 @@ readConfig = decodeFileEither "config.yaml"
 
 --------------------------------------------------------------------------------
 
+getFrob :: Config -> IO (Either ConnError (Response String))
+getFrob config = do
+  putStrLn "Requesting frob..."
+  simpleHTTP (getRequest (frobUrl config))
+
 
 main :: IO ()
 main = do
+
+  -- | This is the disclaimer
   putStrLn "This product uses the Flickr API but is not endorsed or certified by Flickr."
-  putStrLn "Well..."
+
+  eitherConfig <- readConfig
+
+  case eitherConfig of
+    (Left err)     -> print err
+    (Right config) -> do
+
+      eitherConn <- getFrob config
+
+      case eitherConn of
+        (Left connErr) -> putStrLn "Connection error"
+        (Right a)      -> putStrLn (show a)
+
+------------------------------------------------------------------------- KAIZEN
