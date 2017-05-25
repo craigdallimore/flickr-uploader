@@ -18,6 +18,10 @@ executable flickr-uploader
                      , aeson
                      , bytestring
                      , containers
+                     , lens
+                     , lens-aeson
                      , pureMD5
+                     , text
+                     , wreq
                      , yaml
   default-language:    Haskell2010

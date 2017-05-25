@@ -2,7 +2,11 @@
 
 module Main where
 
+import Control.Lens
+import Data.Aeson.Lens
+
 import Data.List as DL
+import Data.Text
 import Data.Semigroup ((<>))
 
 import Data.ByteString.Lazy ( ByteString )
@@ -18,18 +22,14 @@ import Data.Digest.Pure.MD5 ( md5
                             , MD5Digest
                             )
 
--- Outatime! consider https://haskell-lang.org/library/http-client
-import Network.HTTP ( simpleHTTP
-                    , HStream
-                    , Response
-                    , getRequest
-                    , rspBody
-                    )
+import Network.Wreq
 
 import Network.Stream ( ConnError
                       )
 
 import Data.Aeson.Types ( typeMismatch
+                        , Result (..)
+                        , fromJSON
                         )
 
 import Data.Yaml ( FromJSON(parseJSON)
@@ -42,6 +42,7 @@ import Data.Yaml ( FromJSON(parseJSON)
 
 --------------------------------------------------------------------------------
 
+-- | The yaml config
 data Config = Config { apiKey :: ApiKey, secret :: Secret } deriving (Show)
 
 instance FromJSON Config where
@@ -142,6 +143,8 @@ authEndpoint = "https://api.flickr.com/services/auth/?"
 frobUrl :: Config -> String
 frobUrl config = restEndpoint <> sign (secret config) args where
   args = fromList [ ("method", "flickr.auth.getFrob")
+                  , ("format", "json")
+                  , ("nojsoncallback", "1")
                   , ("api_key", apiKey config)
                   ]
 
@@ -149,6 +152,8 @@ frobUrl config = restEndpoint <> sign (secret config) args where
 signInUrl :: Config -> Frob -> String
 signInUrl config frob = authEndpoint <> sign (secret config) args where
   args = fromList [ ("perms", "write")
+                  , ("format", "json")
+                  , ("nojsoncallback", "1")
                   , ("frob", frob)
                   , ("api_key", apiKey config)
                   ]
@@ -158,6 +163,8 @@ signInUrl config frob = authEndpoint <> sign (secret config) args where
 authTokenUrl :: Config -> Frob -> String
 authTokenUrl config frob = restEndpoint <> sign (secret config) args where
   args = fromList [ ("method", "flickr.auth.getToken")
+                  , ("format", "json")
+                  , ("nojsoncallback", "1")
                   , ("frob", frob)
                   , ("api_key", apiKey config)
                   ]
@@ -169,11 +176,10 @@ readConfig = decodeFileEither "config.yaml"
 
 --------------------------------------------------------------------------------
 
-getFrob :: Config -> IO (Either ConnError (Response String))
+getFrob :: Config -> IO (Response ByteString)
 getFrob config = do
   putStrLn "Requesting frob..."
-  simpleHTTP (getRequest (frobUrl config))
-
+  get (frobUrl config)
 
 main :: IO ()
 main = do
@@ -187,10 +193,11 @@ main = do
     (Left err)     -> print err
     (Right config) -> do
 
-      eitherConn <- getFrob config
-
-      case eitherConn of
-        (Left connErr) -> putStrLn "Connection error"
-        (Right a)      -> putStrLn (show a)
+      response <- getFrob config
+      let frobResponse = response ^.. responseBody . key "frob" . key "_content"
+      case fromJSON (DL.head frobResponse) of
+        Error err -> putStrLn $ "Error" <> show err
+        Success frob -> do
+          putStrLn $ "Received frob:" <> frob
 
 ------------------------------------------------------------------------- KAIZEN
