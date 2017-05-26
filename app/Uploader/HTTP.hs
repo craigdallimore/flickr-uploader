@@ -12,7 +12,8 @@ import Data.Digest.Pure.MD5 (md5)
 import Data.Map.Strict ( fromList
                        , foldrWithKey
                        )
-import Network.Wreq ( partFileSource
+import Network.Wreq ( Part
+                    , partFileSource
                     , partText
                     , post
                     , responseBody
@@ -20,60 +21,86 @@ import Network.Wreq ( partFileSource
 
 --------------------------------------------------------------------------------
 
-{-
+-- Notes related to uploading
+-- https://www.flickr.com/services/api/upload.api.html
+--
+-- Endpoint
+-- --------
+-- https://up.flickr.com/services/upload/
+--
+-- Arguments
+-- ---------
+-- Note that the 'photo' parameter should not be included in the signature.
+-- All other POST parameters should be included when generating the signature.
+--
+-- photo
+-- The file to upload.
+--
+-- title (optional)
+-- The title of the photo.
+--
+-- description (optional)
+-- A description of the photo. May contain some limited HTML.
+--
+-- tags (optional)
+-- A space-seperated list of tags to apply to the photo.
+--
+-- is_public, is_friend, is_family (optional)
+-- Set to 0 for no, 1 for yes. Specifies who can view the photo.
+--
+-- safety_level (optional)
+-- Set to 1 for Safe, 2 for Moderate, or 3 for Restricted.
+--
+-- content_type (optional)
+-- Set to 1 for Photo, 2 for Screenshot, or 3 for Other.
+--
+-- hidden (optional)
+-- Set to 1 to keep the photo in global search results, 2 to hide from public searches.
 
-  Notes related to uploading
-  https://www.flickr.com/services/api/upload.api.html
+--------------------------------------------------------------------------------
 
-  Endpoint
-  --------
-  https://up.flickr.com/services/upload/
+-- Generate a flickr signature string from a shared secret and an argument map
+genSig :: Secret -> ArgMap -> Signature
+genSig secret args = (show . md5 . BSC.pack) $ secret <> foldrWithKey go "" args where
+  go key val acc = key <> val <> acc
 
-  Arguments
-  ---------
-  Note that the 'photo' parameter should not be included in the signature.
-  All other POST parameters should be included when generating the signature.
+-- Add a signature to a collection of args
+sign :: Secret -> ArgMap -> String
+sign secret args = toQueryString args <> "&api_sig=" <> genSig secret args
 
-  photo
-  The file to upload.
+-- Generate a queryString from a map
+toQueryString :: ArgMap -> String
+toQueryString args = DL.concat pairs where
+  pairs          = DL.intersperse "&" $ foldrWithKey go [] args
+  go key val acc = key <> "=" <> val : acc
 
-  title (optional)
-  The title of the photo.
-
-  description (optional)
-  A description of the photo. May contain some limited HTML.
-
-  tags (optional)
-  A space-seperated list of tags to apply to the photo.
-
-  is_public, is_friend, is_family (optional)
-  Set to 0 for no, 1 for yes. Specifies who can view the photo.
-
-  safety_level (optional)
-  Set to 1 for Safe, 2 for Moderate, or 3 for Restricted.
-
-  content_type (optional)
-  Set to 1 for Photo, 2 for Screenshot, or 3 for Other.
-
-  hidden (optional)
-  Set to 1 to keep the photo in global search results, 2 to hide from public searches.
-
--}
+-- Generate the parts for a pultipart upload
+makeParts :: FilePath
+          -> Signature
+          -> ArgMap
+          -> [Part]
+makeParts filepath signature = foldrWithKey go xs where
+  go key val xs = partText (fromString key) (fromString val) : xs
+  xs = [ partFileSource "photo"   filepath
+       , partText       "api_sig" (fromString signature)
+       ]
 
 --------------------------------------------------------------------------------
 
 upload :: Secret -> ApiKey -> AuthToken -> FilePath -> IO ()
 upload secret apikey token filepath = do
 
-  let sig = fromString $ genSig secret $ fromList [ ("api_key",    apikey)
-                                                  , ("auth_token", token)
-                                                  ]
+  let args = fromList [ ("api_key",    apikey)
+                      , ("auth_token", token)
+                      , ("is_public", "0")
+                      , ("is_friend", "0")
+                      , ("is_family", "0")
+                      ]
 
-  response <- post uploadEndpoint [ partFileSource "photo" "photo.jpg"
-                                  , partText "api_key"    (fromString apikey)
-                                  , partText "auth_token" (fromString token)
-                                  , partText "api_sig"    sig
-                                  ]
+  let signature = genSig secret args
+  let parts     = makeParts filepath signature args
+
+  response <- post uploadEndpoint parts
 
   print $ response ^. responseBody
 
@@ -103,23 +130,6 @@ authEndpoint = "https://api.flickr.com/services/auth/?"
 
 uploadEndpoint :: String
 uploadEndpoint = "https://up.flickr.com/services/upload/"
-
---------------------------------------------------------------------------------
-
--- Generate a flickr signature string from a shared secret and an argument map
-genSig :: Secret -> ArgMap -> String
-genSig secret args = (show . md5 . BSC.pack) $ secret <> foldrWithKey go "" args where
-  go key val acc = key <> val <> acc
-
--- Add a signature to a collection of args
-sign :: Secret -> ArgMap -> String
-sign secret args = toQueryString args <> "&api_sig=" <> genSig secret args
-
--- Generate a queryString from a map
-toQueryString :: ArgMap -> String
-toQueryString args = DL.concat pairs where
-  pairs          = DL.intersperse "&" $ foldrWithKey go [] args
-  go key val acc = key <> "=" <> val : acc
 
 --------------------------------------------------------------------------------
 
