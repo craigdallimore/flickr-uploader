@@ -6,8 +6,9 @@ import Control.Lens
 import Data.Aeson.Lens
 
 import Data.List as DL
-import Data.Text
 import Data.Semigroup ((<>))
+import Data.String (fromString)
+import Data.Text
 
 import Data.ByteString.Lazy ( ByteString )
 
@@ -141,6 +142,9 @@ restEndpoint = "https://api.flickr.com/services/rest/?"
 authEndpoint :: String
 authEndpoint = "https://api.flickr.com/services/auth/?"
 
+uploadEndpoint :: String
+uploadEndpoint = "https://up.flickr.com/services/upload/"
+
 -- A url to use for requesting a "frob"
 -- A frob is needed to construct a URL for a flickr permissions dialog
 frobUrl :: Config -> String
@@ -195,9 +199,11 @@ getAuthToken config = do
       response <- get (frobUrl config)
 
       let frob = show $ response ^. responseBody . key "frob" . key "_content" . _String
+
       if frob == ""
 
         then pure $ Left "Failed to get frob"
+
         else do
 
           putStrLn "Please authorise the app at the following address"
@@ -240,6 +246,22 @@ main = do
       eitherToken <- getAuthToken config
       case eitherToken of
         Left err    -> putStrLn err
-        Right token -> putStrLn $ "Ready to use token, I think " <> token
+        Right token -> do
+
+          putStrLn "Uploading"
+
+          let key = apiKey config
+              sec = secret config
+              sig = fromString $ genSig sec $ fromList [ ("api_key",    key)
+                                                       , ("auth_token", token)
+                                                       ]
+
+          response <- post uploadEndpoint [ partFileSource "photo" "photo.jpg"
+                                          , partText "api_key"    (fromString key)
+                                          , partText "auth_token" (fromString token)
+                                          , partText "api_sig"    sig
+                                          ]
+
+          print $ response ^. responseBody
 
 ------------------------------------------------------------------------- KAIZEN
