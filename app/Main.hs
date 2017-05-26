@@ -194,11 +194,11 @@ getAuthToken config = do
     else do
       response <- get (frobUrl config)
 
-      let frobVal = response ^.. responseBody . key "frob" . key "_content"
-      case fromJSON (DL.head frobVal) of
+      let frob = show $ response ^. responseBody . key "frob" . key "_content" . _String
+      if frob == ""
 
-        Error   err  -> pure $ Left "Failed to get frob"
-        Success frob -> do
+        then pure $ Left "Failed to get frob"
+        else do
 
           putStrLn "Please authorise the app at the following address"
           putStrLn $ signInUrl config frob
@@ -211,7 +211,7 @@ getAuthToken config = do
           case eitherToken of
             Left err    -> pure $ Left err
             Right token -> do
-              putStrLn $ "Storing token:" <> token
+              putStrLn $ "Storing token: " <> token
               writeFile tokenPath token
               pure (Right token)
 
@@ -220,10 +220,10 @@ requestAuthToken config frob = do
   putStrLn "Requesting auth token..."
   response <- get (authTokenUrl config frob)
 
-  let tokenVal = response ^.. responseBody . key "auth" . key "token" . key "_content"
-  case fromJSON (DL.head tokenVal) of
-    Error err     -> pure $ Left err
-    Success token -> pure $ Right token
+  let token = show $ response ^. responseBody . key "auth" . key "token" . key "_content" . _String
+  if token == ""
+    then pure $ Left "Failed to get token"
+    else pure $ Right token
 
 main :: IO ()
 main = do
@@ -240,6 +240,6 @@ main = do
       eitherToken <- getAuthToken config
       case eitherToken of
         Left err    -> putStrLn err
-        Right token -> putStrLn $ "Ready to use token, I think" <> token
+        Right token -> putStrLn $ "Ready to use token, I think " <> token
 
 ------------------------------------------------------------------------- KAIZEN
