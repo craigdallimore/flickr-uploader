@@ -40,6 +40,8 @@ import Data.Yaml ( FromJSON(parseJSON)
                  , (.:)
                  )
 
+import System.Directory (doesFileExist)
+
 --------------------------------------------------------------------------------
 
 -- | The yaml config
@@ -50,10 +52,11 @@ instance FromJSON Config where
                                 <*> a .: "secret"
   parseJSON invalid    = typeMismatch "Config" invalid
 
-type Frob   = String
-type ApiKey = String
-type Secret = String
-type ArgMap = Map String String
+type AuthToken = String
+type Frob      = String
+type ApiKey    = String
+type Secret    = String
+type ArgMap    = Map String String
 
 --------------------------------------------------------------------------------
 
@@ -148,17 +151,15 @@ frobUrl config = restEndpoint <> sign (secret config) args where
                   , ("api_key", apiKey config)
                   ]
 
--- A url for a flickr permissions dialog
+-- A url for a flickr permissions dialog (provide this to the user so they can
+-- authorise the application)
 signInUrl :: Config -> Frob -> String
 signInUrl config frob = authEndpoint <> sign (secret config) args where
   args = fromList [ ("perms", "write")
-                  , ("format", "json")
-                  , ("nojsoncallback", "1")
                   , ("frob", frob)
                   , ("api_key", apiKey config)
                   ]
 
--- http://flickr.com/services/rest/?method=flickr.auth.getToken&api_key=987654321&frob=1a2b3c4d5e&api_sig=7f3870be274f6c49b3e31a0c6728957f
 -- A url for an auth token
 authTokenUrl :: Config -> Frob -> String
 authTokenUrl config frob = restEndpoint <> sign (secret config) args where
@@ -176,10 +177,54 @@ readConfig = decodeFileEither "config.yaml"
 
 --------------------------------------------------------------------------------
 
-getFrob :: Config -> IO (Response ByteString)
-getFrob config = do
-  putStrLn "Requesting frob..."
-  get (frobUrl config)
+tokenPath :: FilePath
+tokenPath = ".token" -- Hardly safe.
+
+getAuthToken :: Config -> IO (Either String AuthToken)
+getAuthToken config = do
+
+  putStrLn "Checking if a stored token exists..."
+  isTokenFilePresent <- doesFileExist tokenPath
+
+  if isTokenFilePresent
+    then do
+      token <- readFile tokenPath
+      putStrLn $ "Token: " <> token
+      pure (Right token)
+    else do
+      putStrLn "Token file not present. Requesting frob..."
+      response <- get (frobUrl config)
+
+      let frobVal = response ^.. responseBody . key "frob" . key "_content"
+      case fromJSON (DL.head frobVal) of
+
+        Error err    -> pure $ Left "Failed to get frob"
+        Success frob -> do
+
+          putStrLn "Please authorise the app at the following address"
+          putStrLn $ signInUrl config frob
+          putStrLn "Press a key when that is done"
+
+          _ <- getChar
+
+          eitherToken <- requestAuthToken config frob
+
+          case eitherToken of
+            (Left err) -> pure $ Left err
+            (Right token) -> do
+              putStrLn $ "Storing token:" <> token
+              writeFile tokenPath token
+              pure (Right token)
+
+requestAuthToken :: Config -> Frob -> IO (Either String AuthToken)
+requestAuthToken config frob = do
+  putStrLn "Requesting auth token..."
+  response <- get (authTokenUrl config frob)
+
+  let tokenVal = response ^.. responseBody . key "auth" . key "token" . key "_content"
+  case fromJSON (DL.head tokenVal) of
+    Error err     -> pure $ Left err
+    Success token -> pure $ Right token
 
 main :: IO ()
 main = do
@@ -193,11 +238,9 @@ main = do
     (Left err)     -> print err
     (Right config) -> do
 
-      response <- getFrob config
-      let frobResponse = response ^.. responseBody . key "frob" . key "_content"
-      case fromJSON (DL.head frobResponse) of
-        Error err -> putStrLn $ "Error" <> show err
-        Success frob -> do
-          putStrLn $ "Received frob:" <> frob
+      eitherToken <- getAuthToken config
+      case eitherToken of
+        (Left err) -> putStrLn err
+        (Right token) -> putStrLn $"Ready to use token, I think" <> token
 
 ------------------------------------------------------------------------- KAIZEN
