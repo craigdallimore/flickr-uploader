@@ -183,22 +183,21 @@ tokenPath = ".token" -- Hardly safe.
 getAuthToken :: Config -> IO (Either String AuthToken)
 getAuthToken config = do
 
-  putStrLn "Checking if a stored token exists..."
   isTokenFilePresent <- doesFileExist tokenPath
 
   if isTokenFilePresent
+
     then do
       token <- readFile tokenPath
-      putStrLn $ "Token: " <> token
       pure (Right token)
+
     else do
-      putStrLn "Token file not present. Requesting frob..."
       response <- get (frobUrl config)
 
       let frobVal = response ^.. responseBody . key "frob" . key "_content"
       case fromJSON (DL.head frobVal) of
 
-        Error err    -> pure $ Left "Failed to get frob"
+        Error   err  -> pure $ Left "Failed to get frob"
         Success frob -> do
 
           putStrLn "Please authorise the app at the following address"
@@ -210,8 +209,8 @@ getAuthToken config = do
           eitherToken <- requestAuthToken config frob
 
           case eitherToken of
-            (Left err) -> pure $ Left err
-            (Right token) -> do
+            Left err    -> pure $ Left err
+            Right token -> do
               putStrLn $ "Storing token:" <> token
               writeFile tokenPath token
               pure (Right token)
@@ -235,12 +234,12 @@ main = do
   eitherConfig <- readConfig
 
   case eitherConfig of
-    (Left err)     -> print err
-    (Right config) -> do
+    Left err     -> print err
+    Right config -> do
 
       eitherToken <- getAuthToken config
       case eitherToken of
-        (Left err) -> putStrLn err
-        (Right token) -> putStrLn $"Ready to use token, I think" <> token
+        Left err    -> putStrLn err
+        Right token -> putStrLn $ "Ready to use token, I think" <> token
 
 ------------------------------------------------------------------------- KAIZEN
