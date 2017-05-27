@@ -27,5 +27,6 @@ executable flickr-uploader
                      , pureMD5
                      , text
                      , wreq
+                     , xml
                      , yaml
   default-language:    Haskell2010

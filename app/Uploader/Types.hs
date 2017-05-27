@@ -22,13 +22,15 @@ instance FromJSON Config where
                                 <*> a .: "secret"
   parseJSON invalid    = typeMismatch "Config" invalid
 
-type AuthToken  = String
-type Frob       = String
-type ApiKey     = String
-type Secret     = String
-type Signature  = String
-type ArgMap     = Map String String
-type TokenError = String
+type AuthToken   = String
+type Frob        = String
+type ApiKey      = String
+type Secret      = String
+type Signature   = String
+type ArgMap      = Map String String
+type TokenError  = String
+type UploadError = String
+type PhotoId     = String
 
 data AuthError  = AuthError ParseException | TokenError String deriving (Show)
 

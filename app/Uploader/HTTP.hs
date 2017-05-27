@@ -19,6 +19,21 @@ import Network.Wreq ( Part
                     , responseBody
                     )
 
+import Text.XML.Light.Types ( elName
+                            , qName
+                            , Content ( Text
+                                      , Elem
+                                      , CRef
+                                      )
+                            )
+import Text.XML.Light.Input (parseXML)
+import Text.XML.Light.Cursor ( Cursor
+                             , current
+                             , findRec
+                             , fromForest
+                             )
+import Text.XML.Light.Proc (strContent)
+
 --------------------------------------------------------------------------------
 
 -- Notes related to uploading
@@ -76,33 +91,48 @@ toQueryString args = DL.concat pairs where
 
 -- Generate the parts for a pultipart upload
 makeParts :: FilePath
-          -> Signature
+          -> Secret
           -> ArgMap
           -> [Part]
-makeParts filepath signature = foldrWithKey go xs where
+makeParts filepath secret args = foldrWithKey go xs args where
   go key val xs = partText (fromString key) (fromString val) : xs
+  signature = genSig secret args
   xs = [ partFileSource "photo"   filepath
        , partText       "api_sig" (fromString signature)
        ]
 
 --------------------------------------------------------------------------------
 
-upload :: Secret -> ApiKey -> AuthToken -> FilePath -> IO ()
+findPhotoId :: Cursor -> Bool
+findPhotoId c = w (current c) where
+  w (Elem e ) = (qName . elName) e == "photoid"
+  w (Text _ ) = False
+  w (CRef _ ) = False
+
+upload :: Secret -> ApiKey -> AuthToken -> FilePath -> IO (Either UploadError PhotoId)
 upload secret apikey token filepath = do
 
-  let args = fromList [ ("api_key",    apikey)
-                      , ("auth_token", token)
-                      , ("is_public", "0")
-                      , ("is_friend", "0")
-                      , ("is_family", "0")
+  let args = fromList [ ("api_key",        apikey)
+                      , ("auth_token",     token)
+                      , ("format",         "json")
+                      , ("nojsoncallback", "1")
+                      , ("is_public",      "0")
+                      , ("is_friend",      "0")
+                      , ("is_family",      "0")
                       ]
 
-  let signature = genSig secret args
-  let parts     = makeParts filepath signature args
+  response <- post uploadEndpoint (makeParts filepath secret args)
 
-  response <- post uploadEndpoint parts
+  let body        = response ^. responseBody
+      xml         = parseXML body
+      maybeId = do
+        m        <- fromForest xml
+        (Elem e) <- current <$> findRec findPhotoId m
+        pure (strContent e)
 
-  print $ response ^. responseBody
+  case maybeId of
+    Nothing      -> pure $ Left ("Problem uploading " <> filepath)
+    Just photoId -> pure $ Right photoId
 
 --------------------------------------------------------------------------------
 

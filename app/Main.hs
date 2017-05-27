@@ -2,6 +2,7 @@ module Main where
 
 import Uploader.Auth (authorise)
 import Uploader.HTTP (upload)
+import Uploader.Types (AuthError)
 
 --------------------------------------------------------------------------------
 
@@ -15,6 +16,13 @@ main = do
 
   case eitherAuth of
     Left err                      -> print err
-    Right (secret, apikey, token) -> upload secret apikey token "photo.jpg"
+    Right (secret, apikey, token) -> do
+
+      putStrLn "Uploading"
+      eitherUpload <- upload secret apikey token "photo.jpg"
+
+      case eitherUpload of
+        Left err      -> print err
+        Right photoId -> putStrLn photoId
 
 ------------------------------------------------------------------------- KAIZEN
