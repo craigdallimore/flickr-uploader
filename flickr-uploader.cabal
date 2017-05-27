@@ -22,6 +22,7 @@ executable flickr-uploader
                      , bytestring
                      , containers
                      , directory
+                     , filepath
                      , lens
                      , lens-aeson
                      , pureMD5
